@@ -391,7 +391,10 @@ export default function WordListScreen({ navigation, route }) {
       />
 
       <TouchableOpacity style={s.fab} onPress={() => navigation.navigate('AddWord')}>
-        <Text style={s.fabText}>＋</Text>
+        <View style={s.fabCross}>
+          <View style={s.fabBarH} />
+          <View style={s.fabBarV} />
+        </View>
       </TouchableOpacity>
 
       <ConfirmModal
@@ -540,12 +543,15 @@ function makeStyles() {
     fab: {
       position: 'absolute', right: 20, bottom: 24,
       width: 46, height: 46, borderRadius: 23,
-      backgroundColor: colors.primaryContainer,
+      backgroundColor: colors.overlay,
       alignItems: 'center', justifyContent: 'center',
-      elevation: 4,
-      shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3, shadowRadius: 4,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2, shadowRadius: 3,
     },
-    fabText: { color: colors.onPrimaryContainer, fontSize: 22, fontWeight: '300', lineHeight: 28 },
+    fabCross: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
+    fabBarH:  { position: 'absolute', width: 18, height: 1.5, borderRadius: 1, backgroundColor: colors.text2 },
+    fabBarV:  { position: 'absolute', width: 1.5, height: 18, borderRadius: 1, backgroundColor: colors.text2 },
   });
 }
