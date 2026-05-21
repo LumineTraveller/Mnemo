@@ -181,16 +181,35 @@ export default function WordListScreen({ navigation, route }) {
   switchGrpRef.current = switchGroup;
 
   // ── 横划手势切换 tab ──────────────────────────────────────────────────────
+  // PanResponder 挂在 root View，利用 onMoveShouldSetPanResponder（非 capture）
+  // 让 FlatList 先处理垂直滚动；只有明显横向手势才接管。
+  // 第一个 tab 向右滑时不拦截，避免与 React Navigation 的返回手势冲突。
   const tabSwipePan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (_, g) =>
-      Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    // 不在 touch 开始时抢夺，只在移动中根据方向判断
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, g) => {
+      const absDx = Math.abs(g.dx);
+      const absDy = Math.abs(g.dy);
+      // 必须足够水平（dx:dy 比 > 2.5），否则交给 FlatList 处理垂直滚动
+      if (absDx < 12 || absDx < absDy * 2.5) return false;
+      const tabs = allTabsRef.current;
+      if (tabs.length <= 1) return false;
+      const cur = tabs.findIndex(t => t.id === activeGrpRef.current);
+      // 在第一个 tab 往右划 → 不拦截，让 React Navigation back-swipe 正常工作
+      if (g.dx > 0 && cur === 0) return false;
+      // 在最后一个 tab 往左划 → 无处可去，不拦截
+      if (g.dx < 0 && cur === tabs.length - 1) return false;
+      return true;
+    },
     onPanResponderRelease: (_, g) => {
-      if (Math.abs(g.dx) < 30) return;
+      if (Math.abs(g.dx) < 40) return;
       const tabs = allTabsRef.current;
       const cur  = tabs.findIndex(t => t.id === activeGrpRef.current);
       if (g.dx < 0 && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
       else if (g.dx > 0 && cur > 0)          switchGrpRef.current?.(tabs[cur - 1].id);
     },
+    // 被其他手势打断时不做任何操作（保留当前 tab）
+    onPanResponderTerminate: () => {},
   })).current;
 
   // ── 数据加载 ──────────────────────────────────────────────────────────────
@@ -263,7 +282,7 @@ export default function WordListScreen({ navigation, route }) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]} onTouchStart={onActivity}>
+    <View style={[s.root, { paddingTop: insets.top }]} onTouchStart={onActivity} {...tabSwipePan.panHandlers}>
 
       {/* ── 页眉：语言自称 + 词数副标题 + 搜索按钮 ── */}
       {showInlineTitle && (
@@ -313,7 +332,7 @@ export default function WordListScreen({ navigation, route }) {
       <View style={s.filterRow}>
 
         {/* 走马灯区域：所有 tab 绝对定位，以容器中心为原点，按 positionAnim 整体联动 */}
-        <View style={s.carouselContainer} {...tabSwipePan.panHandlers}>
+        <View style={s.carouselContainer}>
           {allTabs.map((tab, i) => {
             const tf = tabTransforms[i];
             if (!tf) return null;

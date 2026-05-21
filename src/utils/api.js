@@ -52,7 +52,7 @@ export async function generateExample(word, lang, definition, pos = '', level = 
       body: JSON.stringify({
         model:       'deepseek-v4-flash',
         messages:    [{ role: 'user', content: prompt }],
-        max_tokens:  500,
+        max_tokens:  1000,
         temperature: newTopic ? 0.9 : 0.7,
       }),
       signal: controller.signal,
