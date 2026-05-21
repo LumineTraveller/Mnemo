@@ -2,7 +2,7 @@ import React, { useCallback, useState, useRef, useMemo, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, Animated, Dimensions, Platform,
+  TextInput, Animated, Dimensions, Platform, PanResponder,
 } from 'react-native';
 import ConfirmModal from '../components/ConfirmModal';
 import Toast from '../components/Toast';
@@ -97,8 +97,14 @@ export default function WordListScreen({ navigation, route }) {
 
   const { onActivity } = useInactivityBars();
 
-  // 横划手势追踪（不依赖 PanResponder/Responder 系统）
-  const swipeRef = useRef({ startX: 0, startY: 0 });
+  // ── 手势 overlay 所需 ref（PanResponder.create 只调用一次，需 ref 避免闭包陈旧）──
+  const carouselWidthRef = useRef(200);
+  const grantTimeRef     = useRef(0);
+  const activeGrpRef     = useRef(null);
+  const allTabsRef       = useRef([]);
+  const switchGrpRef     = useRef(null);
+  const groupsRef        = useRef([]);
+  const refreshRef       = useRef(null);
 
   // ── 分组 tab 列表 ─────────────────────────────────────────────────────────
 
@@ -173,22 +179,73 @@ export default function WordListScreen({ navigation, route }) {
     }).start();
     setActiveGrp(newId);
   }
-  // ── 横划手势切换 tab ──────────────────────────────────────────────────────
-  // 使用 onTouchStart / onTouchEnd（bubble 事件），完全绕开 Responder 系统。
-  // 无论子节点 TouchableOpacity 是否持有 responder，这两个事件都会向上冒泡到
-  // 父 View，因此不受 PanResponder capture/terminate 协商的影响。
-  // onPress 仍然正常：dx 小 = 点击不触发切换，TouchableOpacity 自行处理。
-  function onSwipeTouchStart(e) {
-    swipeRef.current = { startX: e.nativeEvent.pageX, startY: e.nativeEvent.pageY };
-  }
-  function onSwipeTouchEnd(e) {
-    const dx = e.nativeEvent.pageX - swipeRef.current.startX;
-    const dy = e.nativeEvent.pageY - swipeRef.current.startY;
-    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    const cur = allTabs.findIndex(t => t.id === activeGrp);
-    if (dx < 0 && cur < allTabs.length - 1) switchGroup(allTabs[cur + 1].id);
-    else if (dx > 0 && cur > 0)             switchGroup(allTabs[cur - 1].id);
-  }
+  // 每次 render 同步 ref（PanResponder 闭包里永远读最新值）
+  activeGrpRef.current = activeGrp;
+  allTabsRef.current   = allTabs;
+  switchGrpRef.current = switchGroup;
+  groupsRef.current    = groups;
+
+  // ── 手势 overlay PanResponder ──────────────────────────────────────────────
+  // 放在 carouselContainer 内，用 absoluteFillObject 覆盖整个 carousel 区域。
+  // 因为 overlay 自身没有任何子节点，onStartShouldSetPanResponder:true 可以
+  // 无竞争地立即获得 responder，彻底规避新架构下的 capture/terminate 问题。
+  // 点击、滑动、长按全部在此处理，底层 Animated.View tab 仅负责视觉渲染。
+  const tabSwipePan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: ()  => { grantTimeRef.current = Date.now(); },
+    onPanResponderMove:  ()  => {},
+    onPanResponderRelease: (e, g) => {
+      const absDx = Math.abs(g.dx);
+      const absDy = Math.abs(g.dy);
+      const dur   = Date.now() - grantTimeRef.current;
+      const tabs  = allTabsRef.current;
+      const cur   = tabs.findIndex(t => t.id === activeGrpRef.current);
+
+      if (absDx >= 40 && absDx > absDy * 1.5) {
+        // ── 横向滑动：切换相邻 tab ──────────────────────────────────────
+        if (g.dx < 0 && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
+        else if (g.dx > 0 && cur > 0)          switchGrpRef.current?.(tabs[cur - 1].id);
+
+      } else if (absDx < 10 && absDy < 10) {
+        // ── 点击 / 长按：按 x 位置判断目标 tab ─────────────────────────
+        const x   = e.nativeEvent.locationX;
+        const mid = carouselWidthRef.current / 2;
+        // 左侧区域 = 前一个 tab，右侧区域 = 后一个 tab，中间 = 当前 tab
+        const isLeft  = x < mid * 0.65;
+        const isRight = x > mid * 1.35;
+
+        if (dur >= 500) {
+          // 长按 → 删除目标分组（非"全部"tab）
+          let targetIdx = cur;
+          if (isLeft  && cur > 0)               targetIdx = cur - 1;
+          if (isRight && cur < tabs.length - 1) targetIdx = cur + 1;
+          const target = tabs[targetIdx];
+          if (target?.id !== null) {
+            const grp = groupsRef.current.find(gr => gr.id === target.id);
+            if (grp) {
+              setModal({
+                title: '删除分组',
+                message: `删除「${grp.name}」？该组单词将移回未分组。`,
+                confirmLabel: '删除', destructive: true,
+                onConfirm: async () => {
+                  await deleteGroup(grp.id);
+                  if (activeGrpRef.current === grp.id) switchGrpRef.current?.(null);
+                  refreshRef.current?.();
+                  toastRef.current?.show(`已删除分组「${grp.name}」`, 'info');
+                },
+              });
+            }
+          }
+        } else {
+          // 短按（点击）→ 切换到目标 tab
+          if (isLeft  && cur > 0)               switchGrpRef.current?.(tabs[cur - 1].id);
+          else if (isRight && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
+          // 点在中间 = 当前 tab，不做任何事
+        }
+      }
+    },
+    onPanResponderTerminate: () => {},
+  })).current;
 
   // ── 数据加载 ──────────────────────────────────────────────────────────────
 
@@ -206,6 +263,7 @@ export default function WordListScreen({ navigation, route }) {
       setCurrentLang(lang);
     }
   }
+  refreshRef.current = refresh;
 
   // ── 删除 ──────────────────────────────────────────────────────────────────
 
@@ -262,8 +320,8 @@ export default function WordListScreen({ navigation, route }) {
   return (
     <View style={[s.root, { paddingTop: insets.top }]} onTouchStart={onActivity}>
 
-      {/* ── 顶部区域：手势检测在此 View，FlatList 是兄弟节点，互不干扰 ── */}
-      <View onTouchStart={onSwipeTouchStart} onTouchEnd={onSwipeTouchEnd}>
+      {/* ── 顶部区域 ── */}
+      <View>
 
         {/* ── 页眉：语言自称 + 词数副标题 + 搜索按钮 ── */}
         {showInlineTitle && (
@@ -313,7 +371,10 @@ export default function WordListScreen({ navigation, route }) {
         <View style={s.filterRow}>
 
           {/* 走马灯区域：所有 tab 绝对定位，以容器中心为原点，按 positionAnim 整体联动 */}
-          <View style={s.carouselContainer}>
+          <View
+            style={s.carouselContainer}
+            onLayout={e => { carouselWidthRef.current = e.nativeEvent.layout.width; }}
+          >
             {allTabs.map((tab, i) => {
               const tf = tabTransforms[i];
               if (!tf) return null;
@@ -325,14 +386,9 @@ export default function WordListScreen({ navigation, route }) {
                     opacity:   tf.opacity,
                   }]}
                 >
-                  <TouchableOpacity
+                  {/* 仅负责布局测量和文字渲染，交互由下方 overlay 统一处理 */}
+                  <View
                     style={s.tabTouchable}
-                    onPress={() => switchGroup(tab.id)}
-                    onLongPress={tab.id !== null ? () => {
-                      const g = groups.find(gr => gr.id === tab.id);
-                      if (g) handleDeleteGroup(g);
-                    } : undefined}
-                    activeOpacity={0.7}
                     onLayout={e => {
                       const w = Math.ceil(e.nativeEvent.layout.width);
                       setTabWidths(prev => prev[i] === w ? prev : { ...prev, [i]: w });
@@ -341,10 +397,13 @@ export default function WordListScreen({ navigation, route }) {
                     <Text style={[s.filterText, activeGrp === tab.id && s.filterTextActive]}>
                       {tab.label}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 </Animated.View>
               );
             })}
+
+            {/* 手势覆盖层：无子节点 → onStartShouldSetPanResponder:true 无竞争地接管触摸 */}
+            <View style={StyleSheet.absoluteFillObject} {...tabSwipePan.panHandlers} />
           </View>
 
           {/* 加号 — 固定右端，略比 tab 名醒目 */}
