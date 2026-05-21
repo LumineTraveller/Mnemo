@@ -181,24 +181,24 @@ export default function WordListScreen({ navigation, route }) {
   switchGrpRef.current = switchGroup;
 
   // ── 横划手势切换 tab ──────────────────────────────────────────────────────
-  // PanResponder 挂在 root View，利用 onMoveShouldSetPanResponder（非 capture）
-  // 让 FlatList 先处理垂直滚动；只有明显横向手势才接管。
-  // 第一个 tab 向右滑时不拦截，避免与 React Navigation 的返回手势冲突。
+  // 挂在"顶部区域" View（header + carousel，FlatList 的兄弟节点，非父节点）。
+  // 用 onMoveShouldSetPanResponderCapture（捕获阶段）：
+  //   → 在子节点（TouchableOpacity）收到移动事件之前就判断是否水平滑动，
+  //     是则先行接管 responder，子节点的 onPress 不会触发。
+  //   → 因为 FlatList 是兄弟节点而非子节点，完全不受影响。
   const tabSwipePan = useRef(PanResponder.create({
-    // 不在 touch 开始时抢夺，只在移动中根据方向判断
-    onStartShouldSetPanResponder: () => false,
-    onMoveShouldSetPanResponder: (_, g) => {
+    onStartShouldSetPanResponder:        () => false,
+    onStartShouldSetPanResponderCapture: () => false,
+    // 捕获阶段：移动过程中判断是否足够水平
+    onMoveShouldSetPanResponderCapture: (_, g) => {
       const absDx = Math.abs(g.dx);
       const absDy = Math.abs(g.dy);
-      // 必须足够水平（dx:dy 比 > 2.5），否则交给 FlatList 处理垂直滚动
-      if (absDx < 12 || absDx < absDy * 2.5) return false;
+      if (absDx < 10 || absDx < absDy * 2) return false;
       const tabs = allTabsRef.current;
       if (tabs.length <= 1) return false;
       const cur = tabs.findIndex(t => t.id === activeGrpRef.current);
-      // 在第一个 tab 往右划 → 不拦截，让 React Navigation back-swipe 正常工作
-      if (g.dx > 0 && cur === 0) return false;
-      // 在最后一个 tab 往左划 → 无处可去，不拦截
-      if (g.dx < 0 && cur === tabs.length - 1) return false;
+      if (g.dx > 0 && cur === 0)                return false; // 第一个 tab，放行返回手势
+      if (g.dx < 0 && cur === tabs.length - 1)  return false; // 最后一个 tab，无处可去
       return true;
     },
     onPanResponderRelease: (_, g) => {
@@ -208,7 +208,6 @@ export default function WordListScreen({ navigation, route }) {
       if (g.dx < 0 && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
       else if (g.dx > 0 && cur > 0)          switchGrpRef.current?.(tabs[cur - 1].id);
     },
-    // 被其他手势打断时不做任何操作（保留当前 tab）
     onPanResponderTerminate: () => {},
   })).current;
 
@@ -282,118 +281,123 @@ export default function WordListScreen({ navigation, route }) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]} onTouchStart={onActivity} {...tabSwipePan.panHandlers}>
+    <View style={[s.root, { paddingTop: insets.top }]} onTouchStart={onActivity}>
 
-      {/* ── 页眉：语言自称 + 词数副标题 + 搜索按钮 ── */}
-      {showInlineTitle && (
-        <View style={s.header}>
-          <View style={s.headerLeft}>
-            <Text style={s.title}>
-              {LANG_NATIVE[currentLang] ?? currentLang ?? '…'}
-            </Text>
-            <Text style={s.countSubtitle}>
-              {wordCountLabel(filtered.length, currentLang)}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={s.searchBtn}
-            onPress={() => { setShowSearch(v => !v); if (showSearch) setQuery(''); }}
-            activeOpacity={0.6}
-          >
-            <View style={s.magnifierIcon}>
-              <View style={[s.magnifierCircle, showSearch && s.magnifierActive]} />
-              <View style={[s.magnifierHandle, showSearch && s.magnifierHandleActive]} />
+      {/* ── 顶部区域：手势检测在此 View，FlatList 是兄弟节点，互不干扰 ── */}
+      <View {...tabSwipePan.panHandlers}>
+
+        {/* ── 页眉：语言自称 + 词数副标题 + 搜索按钮 ── */}
+        {showInlineTitle && (
+          <View style={s.header}>
+            <View style={s.headerLeft}>
+              <Text style={s.title}>
+                {LANG_NATIVE[currentLang] ?? currentLang ?? '…'}
+              </Text>
+              <Text style={s.countSubtitle}>
+                {wordCountLabel(filtered.length, currentLang)}
+              </Text>
             </View>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity
+              style={s.searchBtn}
+              onPress={() => { setShowSearch(v => !v); if (showSearch) setQuery(''); }}
+              activeOpacity={0.6}
+            >
+              <View style={s.magnifierIcon}>
+                <View style={[s.magnifierCircle, showSearch && s.magnifierActive]} />
+                <View style={[s.magnifierHandle, showSearch && s.magnifierHandleActive]} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
 
-      {/* ── 搜索输入栏 ── */}
-      {showSearch && (
-        <View style={s.searchWrap}>
-          <TextInput
-            style={s.search}
-            placeholder="在语言中寻找…"
-            placeholderTextColor={colors.text3}
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-          />
-          <TouchableOpacity
-            style={s.searchClose}
-            onPress={() => { setShowSearch(false); setQuery(''); }}
-          >
-            <Text style={s.searchCloseText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        {/* ── 搜索输入栏 ── */}
+        {showSearch && (
+          <View style={s.searchWrap}>
+            <TextInput
+              style={s.search}
+              placeholder="在语言中寻找…"
+              placeholderTextColor={colors.text3}
+              value={query}
+              onChangeText={setQuery}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={s.searchClose}
+              onPress={() => { setShowSearch(false); setQuery(''); }}
+            >
+              <Text style={s.searchCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-      {/* ── 分组 Carousel + 加号 ── */}
-      <View style={s.filterRow}>
+        {/* ── 分组 Carousel + 加号 ── */}
+        <View style={s.filterRow}>
 
-        {/* 走马灯区域：所有 tab 绝对定位，以容器中心为原点，按 positionAnim 整体联动 */}
-        <View style={s.carouselContainer}>
-          {allTabs.map((tab, i) => {
-            const tf = tabTransforms[i];
-            if (!tf) return null;
-            return (
-              <Animated.View
-                key={tab.id === null ? '__all__' : String(tab.id)}
-                style={[s.tabItem, {
-                  transform: [{ translateX: tf.translateX }, { scale: tf.scale }],
-                  opacity:   tf.opacity,
-                }]}
-              >
-                <TouchableOpacity
-                  style={s.tabTouchable}
-                  onPress={() => switchGroup(tab.id)}
-                  onLongPress={tab.id !== null ? () => {
-                    const g = groups.find(gr => gr.id === tab.id);
-                    if (g) handleDeleteGroup(g);
-                  } : undefined}
-                  activeOpacity={0.7}
-                  onLayout={e => {
-                    const w = Math.ceil(e.nativeEvent.layout.width);
-                    setTabWidths(prev => prev[i] === w ? prev : { ...prev, [i]: w });
-                  }}
+          {/* 走马灯区域：所有 tab 绝对定位，以容器中心为原点，按 positionAnim 整体联动 */}
+          <View style={s.carouselContainer}>
+            {allTabs.map((tab, i) => {
+              const tf = tabTransforms[i];
+              if (!tf) return null;
+              return (
+                <Animated.View
+                  key={tab.id === null ? '__all__' : String(tab.id)}
+                  style={[s.tabItem, {
+                    transform: [{ translateX: tf.translateX }, { scale: tf.scale }],
+                    opacity:   tf.opacity,
+                  }]}
                 >
-                  <Text style={[s.filterText, activeGrp === tab.id && s.filterTextActive]}>
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              </Animated.View>
-            );
-          })}
-        </View>
+                  <TouchableOpacity
+                    style={s.tabTouchable}
+                    onPress={() => switchGroup(tab.id)}
+                    onLongPress={tab.id !== null ? () => {
+                      const g = groups.find(gr => gr.id === tab.id);
+                      if (g) handleDeleteGroup(g);
+                    } : undefined}
+                    activeOpacity={0.7}
+                    onLayout={e => {
+                      const w = Math.ceil(e.nativeEvent.layout.width);
+                      setTabWidths(prev => prev[i] === w ? prev : { ...prev, [i]: w });
+                    }}
+                  >
+                    <Text style={[s.filterText, activeGrp === tab.id && s.filterTextActive]}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })}
+          </View>
 
-        {/* 加号 — 固定右端，略比 tab 名醒目 */}
-        <TouchableOpacity
-          style={s.filterAddBtn}
-          onPress={() => setShowNewGrp(v => !v)}
-          activeOpacity={0.5}
-        >
-          <Text style={s.filterAddText}>＋</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── 新建分组输入 ── */}
-      {showNewGrp && (
-        <View style={s.newGrpRow}>
-          <TextInput
-            style={[s.search, { flex: 1 }]}
-            value={newGrpName}
-            onChangeText={setNewGrpName}
-            placeholder="新分组名称…"
-            placeholderTextColor={colors.text3}
-            onSubmitEditing={handleCreateGroup}
-            returnKeyType="done"
-            autoFocus
-          />
-          <TouchableOpacity onPress={handleCreateGroup}>
-            <Text style={s.newGrpBtn}>创建</Text>
+          {/* 加号 — 固定右端，略比 tab 名醒目 */}
+          <TouchableOpacity
+            style={s.filterAddBtn}
+            onPress={() => setShowNewGrp(v => !v)}
+            activeOpacity={0.5}
+          >
+            <Text style={s.filterAddText}>＋</Text>
           </TouchableOpacity>
         </View>
-      )}
+
+        {/* ── 新建分组输入 ── */}
+        {showNewGrp && (
+          <View style={s.newGrpRow}>
+            <TextInput
+              style={[s.search, { flex: 1 }]}
+              value={newGrpName}
+              onChangeText={setNewGrpName}
+              placeholder="新分组名称…"
+              placeholderTextColor={colors.text3}
+              onSubmitEditing={handleCreateGroup}
+              returnKeyType="done"
+              autoFocus
+            />
+            <TouchableOpacity onPress={handleCreateGroup}>
+              <Text style={s.newGrpBtn}>创建</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+      </View>{/* ── /顶部区域 ── */}
 
       {/* ── 单词列表 ── */}
       <FlatList
