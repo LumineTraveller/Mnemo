@@ -2,7 +2,7 @@ import React, { useCallback, useState, useRef, useMemo, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, Animated, Dimensions, Platform, PanResponder,
+  TextInput, Animated, Dimensions, Platform,
 } from 'react-native';
 import ConfirmModal from '../components/ConfirmModal';
 import Toast from '../components/Toast';
@@ -97,11 +97,8 @@ export default function WordListScreen({ navigation, route }) {
 
   const { onActivity } = useInactivityBars();
 
-  // 供 PanResponder 回调读取最新状态（避免闭包陷阱）
-  const activeGrpRef  = useRef(null);
-  const allTabsRef    = useRef([]);
-  const switchGrpRef  = useRef(null);
-  activeGrpRef.current = activeGrp;
+  // 横划手势追踪（不依赖 PanResponder/Responder 系统）
+  const swipeRef = useRef({ startX: 0, startY: 0 });
 
   // ── 分组 tab 列表 ─────────────────────────────────────────────────────────
 
@@ -176,40 +173,22 @@ export default function WordListScreen({ navigation, route }) {
     }).start();
     setActiveGrp(newId);
   }
-  // 同步 ref，供 PanResponder 使用
-  allTabsRef.current   = allTabs;
-  switchGrpRef.current = switchGroup;
-
   // ── 横划手势切换 tab ──────────────────────────────────────────────────────
-  // 挂在"顶部区域" View（header + carousel，FlatList 的兄弟节点，非父节点）。
-  // 用 onMoveShouldSetPanResponderCapture（捕获阶段）：
-  //   → 在子节点（TouchableOpacity）收到移动事件之前就判断是否水平滑动，
-  //     是则先行接管 responder，子节点的 onPress 不会触发。
-  //   → 因为 FlatList 是兄弟节点而非子节点，完全不受影响。
-  const tabSwipePan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder:        () => false,
-    onStartShouldSetPanResponderCapture: () => false,
-    // 捕获阶段：移动过程中判断是否足够水平
-    onMoveShouldSetPanResponderCapture: (_, g) => {
-      const absDx = Math.abs(g.dx);
-      const absDy = Math.abs(g.dy);
-      if (absDx < 10 || absDx < absDy * 2) return false;
-      const tabs = allTabsRef.current;
-      if (tabs.length <= 1) return false;
-      const cur = tabs.findIndex(t => t.id === activeGrpRef.current);
-      if (g.dx > 0 && cur === 0)                return false; // 第一个 tab，放行返回手势
-      if (g.dx < 0 && cur === tabs.length - 1)  return false; // 最后一个 tab，无处可去
-      return true;
-    },
-    onPanResponderRelease: (_, g) => {
-      if (Math.abs(g.dx) < 40) return;
-      const tabs = allTabsRef.current;
-      const cur  = tabs.findIndex(t => t.id === activeGrpRef.current);
-      if (g.dx < 0 && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
-      else if (g.dx > 0 && cur > 0)          switchGrpRef.current?.(tabs[cur - 1].id);
-    },
-    onPanResponderTerminate: () => {},
-  })).current;
+  // 使用 onTouchStart / onTouchEnd（bubble 事件），完全绕开 Responder 系统。
+  // 无论子节点 TouchableOpacity 是否持有 responder，这两个事件都会向上冒泡到
+  // 父 View，因此不受 PanResponder capture/terminate 协商的影响。
+  // onPress 仍然正常：dx 小 = 点击不触发切换，TouchableOpacity 自行处理。
+  function onSwipeTouchStart(e) {
+    swipeRef.current = { startX: e.nativeEvent.pageX, startY: e.nativeEvent.pageY };
+  }
+  function onSwipeTouchEnd(e) {
+    const dx = e.nativeEvent.pageX - swipeRef.current.startX;
+    const dy = e.nativeEvent.pageY - swipeRef.current.startY;
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const cur = allTabs.findIndex(t => t.id === activeGrp);
+    if (dx < 0 && cur < allTabs.length - 1) switchGroup(allTabs[cur + 1].id);
+    else if (dx > 0 && cur > 0)             switchGroup(allTabs[cur - 1].id);
+  }
 
   // ── 数据加载 ──────────────────────────────────────────────────────────────
 
@@ -284,7 +263,7 @@ export default function WordListScreen({ navigation, route }) {
     <View style={[s.root, { paddingTop: insets.top }]} onTouchStart={onActivity}>
 
       {/* ── 顶部区域：手势检测在此 View，FlatList 是兄弟节点，互不干扰 ── */}
-      <View {...tabSwipePan.panHandlers}>
+      <View onTouchStart={onSwipeTouchStart} onTouchEnd={onSwipeTouchEnd}>
 
         {/* ── 页眉：语言自称 + 词数副标题 + 搜索按钮 ── */}
         {showInlineTitle && (
