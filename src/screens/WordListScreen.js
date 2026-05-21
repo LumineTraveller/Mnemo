@@ -2,7 +2,7 @@ import React, { useCallback, useState, useRef, useMemo, useEffect } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, Animated, Dimensions, Platform,
+  TextInput, Animated, Dimensions, Platform, PanResponder,
 } from 'react-native';
 import ConfirmModal from '../components/ConfirmModal';
 import Toast from '../components/Toast';
@@ -97,6 +97,12 @@ export default function WordListScreen({ navigation, route }) {
 
   const { onActivity } = useInactivityBars();
 
+  // 供 PanResponder 回调读取最新状态（避免闭包陷阱）
+  const activeGrpRef  = useRef(null);
+  const allTabsRef    = useRef([]);
+  const switchGrpRef  = useRef(null);
+  activeGrpRef.current = activeGrp;
+
   // ── 分组 tab 列表 ─────────────────────────────────────────────────────────
 
   const visibleGroups = useMemo(
@@ -170,6 +176,22 @@ export default function WordListScreen({ navigation, route }) {
     }).start();
     setActiveGrp(newId);
   }
+  // 同步 ref，供 PanResponder 使用
+  allTabsRef.current   = allTabs;
+  switchGrpRef.current = switchGroup;
+
+  // ── 横划手势切换 tab ──────────────────────────────────────────────────────
+  const tabSwipePan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) =>
+      Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderRelease: (_, g) => {
+      if (Math.abs(g.dx) < 30) return;
+      const tabs = allTabsRef.current;
+      const cur  = tabs.findIndex(t => t.id === activeGrpRef.current);
+      if (g.dx < 0 && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
+      else if (g.dx > 0 && cur > 0)          switchGrpRef.current?.(tabs[cur - 1].id);
+    },
+  })).current;
 
   // ── 数据加载 ──────────────────────────────────────────────────────────────
 
@@ -291,7 +313,7 @@ export default function WordListScreen({ navigation, route }) {
       <View style={s.filterRow}>
 
         {/* 走马灯区域：所有 tab 绝对定位，以容器中心为原点，按 positionAnim 整体联动 */}
-        <View style={s.carouselContainer}>
+        <View style={s.carouselContainer} {...tabSwipePan.panHandlers}>
           {allTabs.map((tab, i) => {
             const tf = tabTransforms[i];
             if (!tf) return null;
@@ -390,7 +412,7 @@ export default function WordListScreen({ navigation, route }) {
         contentContainerStyle={{ paddingBottom: 80 }}
       />
 
-      <TouchableOpacity style={s.fab} onPress={() => navigation.navigate('AddWord')}>
+      <TouchableOpacity style={s.fab} onPress={() => navigation.navigate('AddWord', { groupId: activeGrp })}>
         <View style={s.fabCross}>
           <View style={s.fabBarH} />
           <View style={s.fabBarV} />

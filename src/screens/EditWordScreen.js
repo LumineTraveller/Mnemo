@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
+  Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { editWord, loadGroups, deleteGroup } from '../utils/storage';
 import { generateExample } from '../utils/api';
@@ -42,8 +43,10 @@ export default function EditWordScreen({ navigation, route }) {
   const [modal,        setModal]        = useState(null);
 
   const toastRef   = useRef();
-  const lang       = original?.lang || '';
-  const showGender = GENDERED.includes(lang);
+  const lang = original?.lang || '';
+  // 性别选项只在有名词义项时显示
+  const showGender = GENDERED.includes(lang) && senses.some(s => s.pos === '名词');
+  useEffect(() => { if (!showGender) setGender('none'); }, [showGender]);
 
   useEffect(() => {
     setAiLoading(senses.map(() => false));
@@ -56,6 +59,10 @@ export default function EditWordScreen({ navigation, route }) {
 
   function updateSense(idx, field, value) {
     setSenses(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    // 德语选名词时自动首字母大写
+    if (field === 'pos' && value === '名词' && lang === 'German') {
+      setWord(prev => prev ? prev.charAt(0).toUpperCase() + prev.slice(1) : prev);
+    }
   }
   function addSense() {
     setSenses(prev => [...prev, emptySense()]);
@@ -137,6 +144,7 @@ export default function EditWordScreen({ navigation, route }) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
@@ -234,6 +242,7 @@ export default function EditWordScreen({ navigation, route }) {
       />
       <Toast ref={toastRef} />
     </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 

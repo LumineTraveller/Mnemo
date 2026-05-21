@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator,
+  Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { addWord, loadGroups, deleteGroup, loadLang } from '../utils/storage';
 import { generateExample } from '../utils/api';
@@ -23,12 +24,12 @@ function emptySense() {
   return { pos: '', definition: '', example: '' };
 }
 
-export default function AddWordScreen({ navigation }) {
+export default function AddWordScreen({ navigation, route }) {
   const s = useMemo(makeStyles, []);
   const [lang,         setLang]         = useState('German');
   const [word,         setWord]         = useState('');
   const [gender,       setGender]       = useState('none');
-  const [groupId,      setGroupId]      = useState(null);
+  const [groupId,      setGroupId]      = useState(route.params?.groupId ?? null);
   const [groups,       setGroups]       = useState([]);
   const [senses,       setSenses]       = useState([emptySense()]);
   const [aiLoading,    setAiLoading]    = useState([false]);
@@ -45,12 +46,19 @@ export default function AddWordScreen({ navigation }) {
     });
   }, []);
 
-  const showGender = GENDERED.includes(lang);
+  // 性别选项只在有名词义项时显示
+  const showGender = GENDERED.includes(lang) && senses.some(s => s.pos === '名词');
+  // 当没有名词义项时自动重置性别
+  useEffect(() => { if (!showGender) setGender('none'); }, [showGender]);
 
   // ── Sense helpers ────────────────────────────────────────────────────────
 
   function updateSense(idx, field, value) {
     setSenses(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    // 德语选名词时自动首字母大写
+    if (field === 'pos' && value === '名词' && lang === 'German') {
+      setWord(prev => prev ? prev.charAt(0).toUpperCase() + prev.slice(1) : prev);
+    }
   }
   function addSense() {
     setSenses(prev => [...prev, emptySense()]);
@@ -141,6 +149,7 @@ export default function AddWordScreen({ navigation }) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
@@ -240,6 +249,7 @@ export default function AddWordScreen({ navigation }) {
       />
       <Toast ref={toastRef} />
     </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }
 
