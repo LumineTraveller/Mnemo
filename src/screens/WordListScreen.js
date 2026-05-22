@@ -240,7 +240,7 @@ export default function WordListScreen({ navigation, route }) {
         toValue: idx, useNativeDriver: true, tension: 120, friction: 14,
       }).start();
 
-      if (absDx >= 40 && absDx > absDy * 1.5) {
+      if (absDx >= 20 && absDx > absDy * 1.5) {
         // ── 横向滑动：切换相邻 tab ────────────────────────────────────────
         let targetIdx = startIdx;
         if (g.dx < 0 && startIdx < tabs.length - 1) targetIdx = startIdx + 1;
