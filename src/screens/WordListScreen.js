@@ -251,9 +251,10 @@ export default function WordListScreen({ navigation, route }) {
       } else if (absDx < 10 && absDy < 10) {
         // ── 点击 / 长按 ───────────────────────────────────────────────────
         const x      = e.nativeEvent.locationX;
-        const mid    = carouselWidthRef.current / 2;
-        const isLeft  = x < mid * 0.65;
-        const isRight = x > mid * 1.35;
+        // 活跃标签始终锚定在 SCREEN_W/2 处（tab 的 left 值），以此为中心判断左右
+        const center  = SCREEN_W / 2;
+        const isLeft  = x < center - 15;
+        const isRight = x > center + 15;
 
         if (dur >= 500) {
           // 长按 → 弹回原位后弹出删除确认
