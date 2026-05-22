@@ -98,13 +98,15 @@ export default function WordListScreen({ navigation, route }) {
   const { onActivity } = useInactivityBars();
 
   // ── 手势 overlay 所需 ref（PanResponder.create 只调用一次，需 ref 避免闭包陈旧）──
-  const carouselWidthRef = useRef(200);
-  const grantTimeRef     = useRef(0);
-  const activeGrpRef     = useRef(null);
-  const allTabsRef       = useRef([]);
-  const switchGrpRef     = useRef(null);
-  const groupsRef        = useRef([]);
-  const refreshRef       = useRef(null);
+  const carouselWidthRef   = useRef(200);
+  const grantTimeRef       = useRef(0);
+  const activeGrpRef       = useRef(null);
+  const allTabsRef         = useRef([]);
+  const switchGrpRef       = useRef(null);
+  const groupsRef          = useRef([]);
+  const refreshRef         = useRef(null);
+  const gestureStartIdxRef = useRef(0);   // 手势起始时的 tab 索引
+  const tabWidthsRef       = useRef({});  // 各 tab 实测宽度，供 move 计算步长
 
   // ── 分组 tab 列表 ─────────────────────────────────────────────────────────
 
@@ -184,6 +186,7 @@ export default function WordListScreen({ navigation, route }) {
   allTabsRef.current   = allTabs;
   switchGrpRef.current = switchGroup;
   groupsRef.current    = groups;
+  tabWidthsRef.current = tabWidths;
 
   // ── 手势 overlay PanResponder ──────────────────────────────────────────────
   // 放在 carouselContainer 内，用 absoluteFillObject 覆盖整个 carousel 区域。
@@ -192,33 +195,72 @@ export default function WordListScreen({ navigation, route }) {
   // 点击、滑动、长按全部在此处理，底层 Animated.View tab 仅负责视觉渲染。
   const tabSwipePan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onPanResponderGrant: ()  => { grantTimeRef.current = Date.now(); },
-    onPanResponderMove:  ()  => {},
+
+    onPanResponderGrant: () => {
+      grantTimeRef.current     = Date.now();
+      gestureStartIdxRef.current = allTabsRef.current.findIndex(
+        t => t.id === activeGrpRef.current
+      );
+      // 停止可能正在跑的 spring，让后续 setValue 立即生效
+      positionAnim.stopAnimation();
+    },
+
+    // ── 实时跟手：把像素位移换算成 index 偏移，直接 setValue ─────────────
+    onPanResponderMove: (_, g) => {
+      const tabs     = allTabsRef.current;
+      const startIdx = gestureStartIdxRef.current;
+      const widths   = tabWidthsRef.current;
+      if (tabs.length <= 1) return;
+
+      // 一个 tab 步长 ≈ 当前 tab 半宽 + 间距 + 相邻 tab 半宽
+      const neighborIdx = g.dx < 0
+        ? Math.min(startIdx + 1, tabs.length - 1)
+        : Math.max(startIdx - 1, 0);
+      const stepPx = (widths[startIdx]    || DEFAULT_TAB_W) / 2
+                   + TAB_GAP
+                   + (widths[neighborIdx] || DEFAULT_TAB_W) / 2;
+
+      // dx < 0（左划）→ index 增大；超出边界时施加 0.25 阻尼
+      let raw = startIdx + (-g.dx / stepPx);
+      if (raw < 0)               raw = raw * 0.25;
+      if (raw > tabs.length - 1) raw = tabs.length - 1 + (raw - tabs.length + 1) * 0.25;
+
+      positionAnim.setValue(raw);
+    },
+
     onPanResponderRelease: (e, g) => {
-      const absDx = Math.abs(g.dx);
-      const absDy = Math.abs(g.dy);
-      const dur   = Date.now() - grantTimeRef.current;
-      const tabs  = allTabsRef.current;
-      const cur   = tabs.findIndex(t => t.id === activeGrpRef.current);
+      const absDx    = Math.abs(g.dx);
+      const absDy    = Math.abs(g.dy);
+      const dur      = Date.now() - grantTimeRef.current;
+      const tabs     = allTabsRef.current;
+      const startIdx = gestureStartIdxRef.current;
+
+      // 弹到指定 index（从当前拖动位置平滑 spring 过去）
+      const springTo = (idx) => Animated.spring(positionAnim, {
+        toValue: idx, useNativeDriver: true, tension: 120, friction: 14,
+      }).start();
 
       if (absDx >= 40 && absDx > absDy * 1.5) {
-        // ── 横向滑动：切换相邻 tab ──────────────────────────────────────
-        if (g.dx < 0 && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
-        else if (g.dx > 0 && cur > 0)          switchGrpRef.current?.(tabs[cur - 1].id);
+        // ── 横向滑动：切换相邻 tab ────────────────────────────────────────
+        let targetIdx = startIdx;
+        if (g.dx < 0 && startIdx < tabs.length - 1) targetIdx = startIdx + 1;
+        else if (g.dx > 0 && startIdx > 0)          targetIdx = startIdx - 1;
+        springTo(targetIdx);
+        setActiveGrp(tabs[targetIdx].id);
 
       } else if (absDx < 10 && absDy < 10) {
-        // ── 点击 / 长按：按 x 位置判断目标 tab ─────────────────────────
-        const x   = e.nativeEvent.locationX;
-        const mid = carouselWidthRef.current / 2;
-        // 左侧区域 = 前一个 tab，右侧区域 = 后一个 tab，中间 = 当前 tab
+        // ── 点击 / 长按 ───────────────────────────────────────────────────
+        const x      = e.nativeEvent.locationX;
+        const mid    = carouselWidthRef.current / 2;
         const isLeft  = x < mid * 0.65;
         const isRight = x > mid * 1.35;
 
         if (dur >= 500) {
-          // 长按 → 删除目标分组（非"全部"tab）
-          let targetIdx = cur;
-          if (isLeft  && cur > 0)               targetIdx = cur - 1;
-          if (isRight && cur < tabs.length - 1) targetIdx = cur + 1;
+          // 长按 → 弹回原位后弹出删除确认
+          springTo(startIdx);
+          let targetIdx = startIdx;
+          if (isLeft  && startIdx > 0)               targetIdx = startIdx - 1;
+          if (isRight && startIdx < tabs.length - 1) targetIdx = startIdx + 1;
           const target = tabs[targetIdx];
           if (target?.id !== null) {
             const grp = groupsRef.current.find(gr => gr.id === target.id);
@@ -238,13 +280,26 @@ export default function WordListScreen({ navigation, route }) {
           }
         } else {
           // 短按（点击）→ 切换到目标 tab
-          if (isLeft  && cur > 0)               switchGrpRef.current?.(tabs[cur - 1].id);
-          else if (isRight && cur < tabs.length - 1) switchGrpRef.current?.(tabs[cur + 1].id);
-          // 点在中间 = 当前 tab，不做任何事
+          let targetIdx = startIdx;
+          if (isLeft  && startIdx > 0)               targetIdx = startIdx - 1;
+          else if (isRight && startIdx < tabs.length - 1) targetIdx = startIdx + 1;
+          springTo(targetIdx);
+          if (targetIdx !== startIdx) setActiveGrp(tabs[targetIdx].id);
         }
+
+      } else {
+        // 划了一点但不够 → 弹回原位
+        springTo(startIdx);
       }
     },
-    onPanResponderTerminate: () => {},
+
+    // 被系统打断（来电、系统手势等）→ 弹回原位
+    onPanResponderTerminate: () => {
+      Animated.spring(positionAnim, {
+        toValue: gestureStartIdxRef.current,
+        useNativeDriver: true, tension: 120, friction: 14,
+      }).start();
+    },
   })).current;
 
   // ── 数据加载 ──────────────────────────────────────────────────────────────
