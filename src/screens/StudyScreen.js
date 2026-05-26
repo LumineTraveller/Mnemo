@@ -217,11 +217,11 @@ export default function StudyScreen({ navigation, route }) {
       onPanResponderRelease: (_, g) => {
         const ax = Math.abs(g.dx), ay = Math.abs(g.dy);
         if (ay > ax) {
-          if (g.dy < -60) advanceRef.current?.();
+          if (g.dy < -30) advanceRef.current?.();
           else Animated.spring(swipeAnim, { toValue: 0, useNativeDriver: true }).start();
         } else {
-          if (g.dx < -60)     nextSenseRef.current?.();
-          else if (g.dx > 60) prevSenseRef.current?.();
+          if (g.dx < -30)     nextSenseRef.current?.();
+          else if (g.dx > 30) prevSenseRef.current?.();
           else Animated.spring(senseSlideAnim, { toValue: 0, useNativeDriver: true }).start();
         }
       },

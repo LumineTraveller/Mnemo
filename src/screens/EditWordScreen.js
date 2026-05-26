@@ -42,7 +42,8 @@ export default function EditWordScreen({ navigation, route }) {
   const [aiDifficulty, setAiDifficulty] = useState([]);
   const [modal,        setModal]        = useState(null);
 
-  const toastRef   = useRef();
+  const toastRef      = useRef();
+  const handleSaveRef = useRef(null);
   const lang = original?.lang || '';
   // 性别选项只在有名词义项时显示
   const showGender = GENDERED.includes(lang) && senses.some(s => s.pos === '名词');
@@ -140,6 +141,20 @@ export default function EditWordScreen({ navigation, route }) {
       toastRef.current?.show('保存失败', 'error');
     }
   }
+  // 每次 render 同步 ref，让 headerRight 始终调用最新版本的 handleSave
+  handleSaveRef.current = handleSave;
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => handleSaveRef.current?.()}
+          style={{ paddingRight: 16, paddingVertical: 8 }}
+        >
+          <Text style={{ color: colors.accent, fontSize: 15, fontWeight: '500' }}>保存</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, []);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -160,6 +175,25 @@ export default function EditWordScreen({ navigation, route }) {
           placeholderTextColor={colors.text3}
           autoCapitalize="none"
         />
+
+        {/* 语法性别 — 在单词下方，义项前 */}
+        {showGender && (
+          <View style={s.metaRow}>
+            <Text style={s.metaKey}>性别</Text>
+            <View style={s.metaOptions}>
+              {GENDER_OPTIONS.map((g, i) => (
+                <React.Fragment key={g.val}>
+                  <TouchableOpacity onPress={() => setGender(g.val)}>
+                    <Text style={[s.metaOpt, gender === g.val && s.metaOptActive]}>
+                      {g.label}
+                    </Text>
+                  </TouchableOpacity>
+                  {i < GENDER_OPTIONS.length - 1 && <Text style={s.metaSep}>·</Text>}
+                </React.Fragment>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* 义项 */}
         {senses.map((sense, idx) => (
@@ -185,25 +219,6 @@ export default function EditWordScreen({ navigation, route }) {
           <Text style={s.addSenseBtnText}>＋ 添加义项</Text>
         </TouchableOpacity>
 
-        {/* 语法性别 — inline */}
-        {showGender && (
-          <View style={s.metaRow}>
-            <Text style={s.metaKey}>性别</Text>
-            <View style={s.metaOptions}>
-              {GENDER_OPTIONS.map((g, i) => (
-                <React.Fragment key={g.val}>
-                  <TouchableOpacity onPress={() => setGender(g.val)}>
-                    <Text style={[s.metaOpt, gender === g.val && s.metaOptActive]}>
-                      {g.label}
-                    </Text>
-                  </TouchableOpacity>
-                  {i < GENDER_OPTIONS.length - 1 && <Text style={s.metaSep}>·</Text>}
-                </React.Fragment>
-              ))}
-            </View>
-          </View>
-        )}
-
         {/* 分组 — inline（长按删除） */}
         <View style={s.metaRow}>
           <Text style={s.metaKey}>分组</Text>
@@ -224,11 +239,6 @@ export default function EditWordScreen({ navigation, route }) {
             ))}
           </ScrollView>
         </View>
-
-        {/* 保存 */}
-        <TouchableOpacity style={s.saveBtn} onPress={handleSave}>
-          <Text style={s.saveBtnText}>保存更改</Text>
-        </TouchableOpacity>
 
       </ScrollView>
 
@@ -268,7 +278,40 @@ function SenseCard({
         </View>
       )}
 
-      {/* ① 例句 — 首要内容 */}
+      {/* ① 词性 — 内联折叠 */}
+      <TouchableOpacity style={[s.posToggleRow, { marginBottom: 10 }]} onPress={() => setShowPos(v => !v)}>
+        <Text style={s.posToggleText}>
+          词性{sense.pos ? `  ·  ${sense.pos}` : ''}
+          {'  '}{showPos ? '▴' : '▾'}
+        </Text>
+      </TouchableOpacity>
+
+      {showPos && (
+        <View style={s.posOptions}>
+          {POS_LIST.map((p, i) => (
+            <React.Fragment key={p}>
+              {i > 0 && <Text style={s.posOptSep}>·</Text>}
+              <TouchableOpacity
+                onPress={() => { onChange('pos', sense.pos === p ? '' : p); setShowPos(false); }}
+              >
+                <Text style={[s.posOpt, sense.pos === p && s.posOptActive]}>{p}</Text>
+              </TouchableOpacity>
+            </React.Fragment>
+          ))}
+        </View>
+      )}
+
+      {/* ② 释义 */}
+      <TextInput
+        style={s.inputDef}
+        value={sense.definition}
+        onChangeText={v => onChange('definition', v)}
+        placeholder="释义…"
+        placeholderTextColor={colors.text3}
+        multiline
+      />
+
+      {/* ③ 例句 */}
       <View style={s.exampleLabelRow}>
         <Text style={s.fieldHint}>例句</Text>
         <TouchableOpacity onPress={onAiGenerate} disabled={aiLoading} style={s.aiTrigger}>
@@ -300,39 +343,6 @@ function SenseCard({
         placeholderTextColor={colors.text3}
         multiline
       />
-
-      {/* ② 释义 */}
-      <TextInput
-        style={s.inputDef}
-        value={sense.definition}
-        onChangeText={v => onChange('definition', v)}
-        placeholder="释义…"
-        placeholderTextColor={colors.text3}
-        multiline
-      />
-
-      {/* ③ 词性 — 内联折叠 */}
-      <TouchableOpacity style={s.posToggleRow} onPress={() => setShowPos(v => !v)}>
-        <Text style={s.posToggleText}>
-          词性{sense.pos ? `  ·  ${sense.pos}` : ''}
-          {'  '}{showPos ? '▴' : '▾'}
-        </Text>
-      </TouchableOpacity>
-
-      {showPos && (
-        <View style={s.posOptions}>
-          {POS_LIST.map((p, i) => (
-            <React.Fragment key={p}>
-              {i > 0 && <Text style={s.posOptSep}>·</Text>}
-              <TouchableOpacity
-                onPress={() => { onChange('pos', sense.pos === p ? '' : p); setShowPos(false); }}
-              >
-                <Text style={[s.posOpt, sense.pos === p && s.posOptActive]}>{p}</Text>
-              </TouchableOpacity>
-            </React.Fragment>
-          ))}
-        </View>
-      )}
     </View>
   );
 }
