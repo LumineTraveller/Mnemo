@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   Animated, PanResponder, Dimensions,
 } from 'react-native';
-import { getDueWords, reviewWord, markMastered, deleteWord, loadLang, loadSettings, getWordSenses } from '../utils/storage';
+import { getDueWords, reviewWord, markMastered, loadLang, loadSettings, getWordSenses } from '../utils/storage';
 import { colors, radius, spacing } from '../utils/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -43,7 +43,6 @@ export default function StudyScreen({ navigation, route }) {
   const [isMastered,     setIsMastered]     = useState(false);
   const [correct,        setCorrect]        = useState(0);
   const [done,           setDone]           = useState(false);
-  const [deleteConfirm,  setDeleteConfirm]  = useState(false);
 
   // Animations
   const revealAnim     = useRef(new Animated.Value(0)).current;
@@ -169,7 +168,6 @@ export default function StudyScreen({ navigation, route }) {
         setSenseIndex(0);
         setRatedSenses({});
         setIsMastered(false);
-        setDeleteConfirm(false);
         revealAnim.setValue(0);
         swipeHint.setValue(0);
         animateCardIn();
@@ -209,27 +207,6 @@ export default function StudyScreen({ navigation, route }) {
       reviewWord(queue[cardIndex], 0);
       // 之前如果全部正确计了分，现在要撤回
       if (prevOverall === 2) setCorrect(c => c - 1);
-    }
-  }
-
-  async function handleDeleteWord() {
-    const card = queue[cardIndex];
-    await deleteWord(card.word, card.lang);
-    // 把这张卡从队列里移除，直接跳到下一张
-    const newQueue = queue.filter((_, i) => i !== cardIndex);
-    if (newQueue.length === 0) {
-      setDone(true);
-    } else {
-      setQueue(newQueue);
-      const next = Math.min(cardIndex, newQueue.length - 1);
-      setCardIndex(next);
-      setSenseIndex(0);
-      setRatedSenses({});
-      setIsMastered(false);
-      setDeleteConfirm(false);
-      revealAnim.setValue(0);
-      swipeHint.setValue(0);
-      animateCardIn();
     }
   }
 
@@ -403,34 +380,15 @@ export default function StudyScreen({ navigation, route }) {
         )}
 
         {isMastered ? (
-          // 已标记太简单 → 直接上滑 + 可选删除
-          <View style={st.swipeHintWrap}>
-            <Animated.View style={{
-              opacity: swipeHint.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }),
-            }}>
-              <TouchableOpacity style={st.nextBtn} onPress={advanceCard}>
-                <Text style={st.nextArrow}>↑</Text>
-                <Text style={st.nextLabel}>上滑 / 下一个</Text>
-              </TouchableOpacity>
-            </Animated.View>
-            {deleteConfirm ? (
-              <View style={st.deleteConfirmRow}>
-                <Text style={st.deleteConfirmText}>确定删除「{card.word}」？</Text>
-                <View style={st.deleteConfirmBtns}>
-                  <TouchableOpacity onPress={handleDeleteWord} style={st.deleteConfirmYes}>
-                    <Text style={st.deleteConfirmYesText}>删除</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setDeleteConfirm(false)} style={st.deleteConfirmNo}>
-                    <Text style={st.deleteConfirmNoText}>取消</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity style={st.deleteBtn} onPress={() => setDeleteConfirm(true)} activeOpacity={0.7}>
-                <Text style={st.deleteBtnText}>删除单词</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          // 已标记太简单 → 直接上滑（✕取消 在下方，点它即可撤销）
+          <Animated.View style={[st.swipeHintWrap, {
+            opacity: swipeHint.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }),
+          }]}>
+            <TouchableOpacity style={st.nextBtn} onPress={advanceCard}>
+              <Text style={st.nextArrow}>↑</Text>
+              <Text style={st.nextLabel}>上滑 / 下一个</Text>
+            </TouchableOpacity>
+          </Animated.View>
 
         ) : allRated ? (
           // 全部义项已评 → 上滑翻页
@@ -549,17 +507,6 @@ function makeSt() { return StyleSheet.create({
   // 误判修正
   reRateBtn:     { alignSelf: 'center', marginTop: 12, paddingHorizontal: 22, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.red + '55', backgroundColor: colors.redBg },
   reRateBtnText: { fontSize: 12, color: colors.red, fontWeight: '500' },
-
-  // 删除单词
-  deleteBtn:           { marginTop: 10, paddingHorizontal: 18, paddingVertical: 6, alignSelf: 'center' },
-  deleteBtnText:       { fontSize: 12, color: colors.text3, opacity: 0.5 },
-  deleteConfirmRow:    { marginTop: 10, alignItems: 'center', gap: 10 },
-  deleteConfirmText:   { fontSize: 13, color: colors.text2 },
-  deleteConfirmBtns:   { flexDirection: 'row', gap: 12 },
-  deleteConfirmYes:    { paddingHorizontal: 20, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.red + '66', backgroundColor: colors.redBg },
-  deleteConfirmYesText:{ fontSize: 13, color: colors.red, fontWeight: '500' },
-  deleteConfirmNo:     { paddingHorizontal: 20, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border2 },
-  deleteConfirmNoText: { fontSize: 13, color: colors.text3 },
 
   // 太简单 toggle
   tooEasyBtn:    { alignSelf: 'center', marginTop: 10, paddingHorizontal: 22, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border2 },
