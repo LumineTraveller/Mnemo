@@ -192,6 +192,24 @@ export default function StudyScreen({ navigation, route }) {
     }
   }
 
+  function handleReRateWrong() {
+    const idx = senseIdxRef.current;
+    if (ratedSensesRef.current[idx] === 0) return; // 已经是不认识，无需操作
+
+    const prevAllRated = Object.keys(ratedSensesRef.current).length === senseLenRef.current;
+    const prevOverall  = prevAllRated ? Math.min(...Object.values(ratedSensesRef.current)) : null;
+
+    const newRated = { ...ratedSensesRef.current, [idx]: 0 };
+    setRatedSenses(newRated);
+
+    // 如果所有义项都已评过，重新提交评分
+    if (prevAllRated) {
+      reviewWord(queue[cardIndex], 0);
+      // 之前如果全部正确计了分，现在要撤回
+      if (prevOverall === 2) setCorrect(c => c - 1);
+    }
+  }
+
   // Sync refs every render
   useEffect(() => {
     advanceRef.current   = advanceCard;
@@ -410,6 +428,17 @@ export default function StudyScreen({ navigation, route }) {
           </View>
         )}
 
+        {/* 误判修正 — 已评且评分 > 0 时才显示 */}
+        {isRated && !isMastered && ratedSenses[senseIndex] > 0 && (
+          <TouchableOpacity
+            style={st.reRateBtn}
+            onPress={handleReRateWrong}
+            activeOpacity={0.7}
+          >
+            <Text style={st.reRateBtnText}>不认识</Text>
+          </TouchableOpacity>
+        )}
+
         {/* 太简单 / 取消 toggle */}
         <TouchableOpacity
           style={[st.tooEasyBtn, isMastered && st.tooEasyBtnOn]}
@@ -475,8 +504,12 @@ function makeSt() { return StyleSheet.create({
   nextArrow:     { fontSize: 22, color: colors.text3, marginBottom: 4 },
   nextLabel:     { fontSize: 13, color: colors.text3 },
 
+  // 误判修正
+  reRateBtn:     { alignSelf: 'center', marginTop: 12, paddingHorizontal: 22, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.red + '55', backgroundColor: colors.redBg },
+  reRateBtnText: { fontSize: 12, color: colors.red, fontWeight: '500' },
+
   // 太简单 toggle
-  tooEasyBtn:    { alignSelf: 'center', marginTop: 14, paddingHorizontal: 22, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border2 },
+  tooEasyBtn:    { alignSelf: 'center', marginTop: 10, paddingHorizontal: 22, paddingVertical: 7, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border2 },
   tooEasyBtnOn:  { borderColor: colors.amber + '88', backgroundColor: colors.amberBg },
   tooEasyText:   { fontSize: 12, color: colors.text3 },
   tooEasyTextOn: { color: colors.amber, fontWeight: '600' },
