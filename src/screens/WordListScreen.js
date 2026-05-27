@@ -87,6 +87,7 @@ export default function WordListScreen({ navigation, route }) {
   const [currentLang, setCurrentLang] = useState(null);
   const [modal,       setModal]       = useState(null);
   const [sortBy,      setSortBy]      = useState('alpha'); // 'alpha' | 'familiarity'
+  const [showSortMenu, setShowSortMenu] = useState(false);
   // Carousel 容器实测宽度，初始用屏宽估算
 
   const toastRef     = useRef();
@@ -404,15 +405,6 @@ export default function WordListScreen({ navigation, route }) {
               </Text>
             </View>
             <TouchableOpacity
-              style={s.sortBtn}
-              onPress={() => setSortBy(v => v === 'alpha' ? 'familiarity' : 'alpha')}
-              activeOpacity={0.6}
-            >
-              <Text style={[s.sortBtnText, sortBy === 'familiarity' && s.sortBtnActive]}>
-                {sortBy === 'familiarity' ? '熟↑' : '熟'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={s.searchBtn}
               onPress={() => { setShowSearch(v => !v); if (showSearch) setQuery(''); }}
               activeOpacity={0.6}
@@ -447,6 +439,36 @@ export default function WordListScreen({ navigation, route }) {
 
         {/* ── 分组 Carousel + 加号 ── */}
         <View style={s.filterRow}>
+
+          {/* 排序下拉 — 左侧 */}
+          <View style={s.sortDropWrapper}>
+            <TouchableOpacity
+              style={s.sortDropBtn}
+              onPress={() => setShowSortMenu(v => !v)}
+              activeOpacity={0.6}
+            >
+              <Text style={[s.sortDropLabel, sortBy === 'familiarity' && s.sortDropLabelActive]}>
+                {sortBy === 'alpha' ? 'Az' : '熟'}
+              </Text>
+              <Text style={s.sortDropArrow}>{showSortMenu ? '▴' : '▾'}</Text>
+            </TouchableOpacity>
+            {showSortMenu && (
+              <View style={s.sortMenu}>
+                <TouchableOpacity
+                  style={s.sortMenuItem}
+                  onPress={() => { setSortBy('alpha');       setShowSortMenu(false); }}
+                >
+                  <Text style={[s.sortMenuText, sortBy === 'alpha'       && s.sortMenuTextActive]}>字母序</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.sortMenuItem}
+                  onPress={() => { setSortBy('familiarity'); setShowSortMenu(false); }}
+                >
+                  <Text style={[s.sortMenuText, sortBy === 'familiarity' && s.sortMenuTextActive]}>熟悉度</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
           {/* 走马灯区域：所有 tab 绝对定位，以容器中心为原点，按 positionAnim 整体联动 */}
           <View
@@ -603,11 +625,6 @@ function makeStyles() {
       marginTop:     5,
     },
 
-    // ── 排序按钮 ──────────────────────────────────────────────────────────
-    sortBtn:       { padding: 10, marginTop: 2 },
-    sortBtnText:   { fontSize: 12, color: colors.text3, letterSpacing: 0.3 },
-    sortBtnActive: { color: colors.accent, fontWeight: '600' },
-
     // ── 放大镜按钮 ────────────────────────────────────────────────────────
     searchBtn: { padding: 10, marginRight: -6, marginTop: 2 },
     magnifierIcon: { width: 20, height: 20 },
@@ -638,6 +655,41 @@ function makeStyles() {
     },
     searchClose:     { paddingLeft: 14, paddingVertical: 4 },
     searchCloseText: { fontSize: 13, color: colors.text3 },
+
+    // ── 排序下拉 ──────────────────────────────────────────────────────────
+    sortDropWrapper: {
+      zIndex:          20,
+      paddingLeft:     16,
+      justifyContent:  'center',
+    },
+    sortDropBtn: {
+      flexDirection: 'row',
+      alignItems:    'center',
+      gap:           3,
+      paddingVertical: 8,
+      paddingRight:  4,
+    },
+    sortDropLabel:       { fontSize: 12, color: colors.text3, letterSpacing: 0.3 },
+    sortDropLabelActive: { color: colors.accent },
+    sortDropArrow:       { fontSize: 8,  color: colors.text3, marginTop: 1 },
+    sortMenu: {
+      position:        'absolute',
+      top:             36,
+      left:            12,
+      zIndex:          20,
+      backgroundColor: colors.overlay,
+      borderRadius:    10,
+      paddingVertical: 4,
+      minWidth:        80,
+      shadowColor:     '#000',
+      shadowOffset:    { width: 0, height: 2 },
+      shadowOpacity:   0.18,
+      shadowRadius:    6,
+      elevation:       6,
+    },
+    sortMenuItem:        { paddingHorizontal: 14, paddingVertical: 10 },
+    sortMenuText:        { fontSize: 13, color: colors.text3 },
+    sortMenuTextActive:  { color: colors.accent, fontWeight: '500' },
 
     // ── 分组 Carousel ─────────────────────────────────────────────────────
     filterRow: {
