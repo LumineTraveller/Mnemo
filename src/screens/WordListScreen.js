@@ -86,6 +86,7 @@ export default function WordListScreen({ navigation, route }) {
   const [showNewGrp,  setShowNewGrp]  = useState(false);
   const [currentLang, setCurrentLang] = useState(null);
   const [modal,       setModal]       = useState(null);
+  const [sortBy,      setSortBy]      = useState('alpha'); // 'alpha' | 'familiarity'
   // Carousel 容器实测宽度，初始用屏宽估算
 
   const toastRef     = useRef();
@@ -369,6 +370,18 @@ export default function WordListScreen({ navigation, route }) {
     return matchLang && matchGroup && matchQuery;
   });
 
+  // 熟悉度得分：ease 越低 + lapses 越多 = 越不熟（分越低）
+  const displayed = useMemo(() => {
+    if (sortBy === 'familiarity') {
+      return [...filtered].sort((a, b) => {
+        const sa = (a.ease || 2.5) - (a.lapses || 0) * 0.15;
+        const sb = (b.ease || 2.5) - (b.lapses || 0) * 0.15;
+        return sa - sb; // 从低到高
+      });
+    }
+    return filtered;
+  }, [filtered, sortBy]);
+
   const showInlineTitle = initGroupId === null && !route.params?.groupName;
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -390,6 +403,15 @@ export default function WordListScreen({ navigation, route }) {
                 {wordCountLabel(filtered.length, currentLang)}
               </Text>
             </View>
+            <TouchableOpacity
+              style={s.sortBtn}
+              onPress={() => setSortBy(v => v === 'alpha' ? 'familiarity' : 'alpha')}
+              activeOpacity={0.6}
+            >
+              <Text style={[s.sortBtnText, sortBy === 'familiarity' && s.sortBtnActive]}>
+                {sortBy === 'familiarity' ? '熟↑' : '熟'}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={s.searchBtn}
               onPress={() => { setShowSearch(v => !v); if (showSearch) setQuery(''); }}
@@ -495,7 +517,7 @@ export default function WordListScreen({ navigation, route }) {
 
       {/* ── 单词列表 ── */}
       <FlatList
-        data={filtered}
+        data={displayed}
         keyExtractor={item => `${item.lang}::${item.word}`}
         renderItem={({ item }) => {
           const senses  = getWordSenses(item);
@@ -580,6 +602,11 @@ function makeStyles() {
       letterSpacing: 0.3,
       marginTop:     5,
     },
+
+    // ── 排序按钮 ──────────────────────────────────────────────────────────
+    sortBtn:       { padding: 10, marginTop: 2 },
+    sortBtnText:   { fontSize: 12, color: colors.text3, letterSpacing: 0.3 },
+    sortBtnActive: { color: colors.accent, fontWeight: '600' },
 
     // ── 放大镜按钮 ────────────────────────────────────────────────────────
     searchBtn: { padding: 10, marginRight: -6, marginTop: 2 },
