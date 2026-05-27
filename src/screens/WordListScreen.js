@@ -253,8 +253,8 @@ export default function WordListScreen({ navigation, route }) {
       } else if (absDx < 10 && absDy < 10) {
         // ── 点击 / 长按 ───────────────────────────────────────────────────
         const x      = e.nativeEvent.locationX;
-        // 活跃标签始终锚定在 SCREEN_W/2 处（tab 的 left 值），以此为中心判断左右
-        const center  = SCREEN_W / 2;
+        // 活跃标签锚定在容器中心（50%），以此为中心判断左右
+        const center  = carouselWidthRef.current / 2;
         const isLeft  = x < center - 15;
         const isRight = x > center + 15;
 
@@ -705,12 +705,12 @@ function makeStyles() {
       height:   44,
       overflow: 'hidden',
     },
-    // 每个 tab 绝对定位；left 锚定屏幕中心，translateX 再减去自身宽度的一半 = 视觉居中
+    // 每个 tab 绝对定位；left 锚定容器中心，translateX 再减去自身宽度的一半 = 视觉居中
     tabItem: {
       position:       'absolute',
       top:            0,
       bottom:         0,
-      left:           SCREEN_W / 2,
+      left:           '50%',
       alignItems:     'center',
       justifyContent: 'center',
     },
